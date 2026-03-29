@@ -34,6 +34,53 @@ struct Character {
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
+const u8 PIN_LEFT = D0;
+const u8 PIN_CENTER = D1;
+const u8 PIN_RIGHT = D2;
+
+struct Button {
+  u8 pin;
+  bool state;
+  bool lastState;
+  bool pressed;
+  u32 lastChange;
+};
+
+Button buttons[3];
+const u32 DEBOUNCE_MS = 50;
+
+void initButtons() {
+  u8 pins[] = { PIN_LEFT, PIN_CENTER, PIN_RIGHT };
+  for (u8 i = 0; i < 3; i++) {
+    pinMode(pins[i], INPUT);
+    buttons[i] = { pins[i], false, false, false, 0 };
+  }
+}
+
+void readButtons() {
+  u32 now = millis();
+  for (u8 i = 0; i < 3; i++) {
+    bool raw = digitalRead(buttons[i].pin);
+    buttons[i].pressed = false;
+    if (raw != buttons[i].lastState) {
+      buttons[i].lastChange = now;
+    }
+    if ((now - buttons[i].lastChange) > DEBOUNCE_MS) {
+      if (raw != buttons[i].state) {
+        buttons[i].state = raw;
+        if (buttons[i].state) {
+          buttons[i].pressed = true;
+        }
+      }
+    }
+    buttons[i].lastState = raw;
+  }
+}
+
+bool btnLeft() { return buttons[0].pressed; }
+bool btnCenter() { return buttons[1].pressed; }
+bool btnRight() { return buttons[2].pressed; }
+
 void startupScreen() {
   u8g2.clearBuffer();
   // u8g2.setFont(u8g2_font_jinxedwizards_tr);
