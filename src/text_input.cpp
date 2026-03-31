@@ -56,7 +56,7 @@ void TextInput::update() {
     cursor++;
     charIndex = 0;
     // if first char in charset is exit char and we're back to cursor 0 edge,
-    // that's fine — cursor just incremented so cursor > 0 now
+    // that's fine cursor just incremented so cursor > 0 now
 
     if (cursor >= maxLen) {
       done = true;

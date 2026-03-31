@@ -18,7 +18,7 @@ const std::string version = "Version 2.0.0";
 // shared display instance (defined in main.cpp)
 extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2;
 
-// screen layout — box area is narrower to leave room for death scroller
+// screen layout box area is narrower to leave room for death scroller
 const i16 BOX_X = 0;
 const i16 BOX_Y = 10;   // 2px closer to info text above
 const i16 BOX_W = 96;   // narrowed from 128 to leave 32px for scroller
@@ -41,7 +41,7 @@ enum class Hat : u8 {
   COUNT
 };
 
-// death types — add new entries before COUNT
+// death types add new entries before COUNT
 enum class Death : u8 {
   Button = 0,  // explode by pressing a button
   Gun,

@@ -7,7 +7,7 @@
 const std::string CHARSET_ALPHA = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const u8 CHARSET_ALPHA_LEN = CHARSET_ALPHA.length();
 
-// charset for age — '#' is the confirm character
+// charset for age '#' is the confirm character
 const std::string CHARSET_NUMERIC = "#0123456789";
 const u8 CHARSET_NUMERIC_LEN = CHARSET_NUMERIC.length();
 
