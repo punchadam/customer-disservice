@@ -45,10 +45,10 @@ void MPU6050::read() {
 
 // physics for bouncing character in the box (uses the narrower sandbox box)
 
-const float PHYS_LEFT   = BOX_X + 6;
-const float PHYS_RIGHT  = BOX_X + BOX_W - 6;
-const float PHYS_TOP    = BOX_Y + CHAR_H + 2;
-const float PHYS_BOTTOM = BOX_Y + BOX_H - 2;
+const float PHYS_LEFT   = BOX_X + 5;
+const float PHYS_RIGHT  = BOX_X + BOX_W - 5;
+const float PHYS_TOP    = BOX_Y + CHAR_H + 1;
+const float PHYS_BOTTOM = BOX_Y + BOX_H - 1;
 
 const float GRAVITY_SCALE = 1200.0f;  // pixels/s² per g
 const float BOUNCE  = 0.8f;           // coefficient of restitution

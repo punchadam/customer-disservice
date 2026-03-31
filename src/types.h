@@ -18,11 +18,11 @@ const std::string version = "Version 2.0.0";
 // shared display instance (defined in main.cpp)
 extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2;
 
-// screen layout — sandbox box is narrower to leave room for death scroller
+// screen layout — box area is narrower to leave room for death scroller
 const i16 BOX_X = 0;
-const i16 BOX_Y = 12;
+const i16 BOX_Y = 10;   // 2px closer to info text above
 const i16 BOX_W = 96;   // narrowed from 128 to leave 32px for scroller
-const i16 BOX_H = 52;
+const i16 BOX_H = 54;   // taller since BOX_Y moved up
 
 // full-width box used during character creation menus
 const i16 FULL_BOX_W = 128;
@@ -41,11 +41,14 @@ enum class Hat : u8 {
   COUNT
 };
 
+// death types — add new entries before COUNT
 enum class Death : u8 {
-  Fire = 0,
-  Crush,
-  Zap,
-  Melt,
+  Button = 0,  // explode by pressing a button
+  Gun,
+  Sword,
+  Kick,        // roundhouse kick
+  Eat,
+  Throw,
   COUNT
 };
 
@@ -54,7 +57,7 @@ const std::string hatNames[] = {
 };
 
 const std::string deathNames[] = {
-  "FIRE", "CRUSH", "ZAP", "MELT"
+  "BUTTON", "GUN", "SWORD", "KICK", "EAT", "THROW"
 };
 
 // player character
@@ -63,7 +66,7 @@ struct Character {
   std::string name;
   u8 age;
   Hat hat = Hat::None;
-  Death death = Death::Fire;
+  Death death = Death::Button;
 
   // position for physics
   float x;
@@ -90,3 +93,7 @@ extern u8 customerCount;
 
 void loadCustomers();
 void saveCustomer(const Character& c);
+
+// simple LFSR noise (shared across files)
+extern u16 noiseSeed;
+u16 noiseRand();

@@ -12,6 +12,12 @@ void TextInput::begin(u8 limit, const std::string& cset, char exitCh) {
   charsetLength = charset.length();
   done = false;
   exitChar = exitCh;
+
+  // if the first char in the charset is the exit char, skip it
+  // (cursor is 0, so exit char shouldn't be selectable yet)
+  if (charsetLength > 1 && charset[charIndex] == exitChar) {
+    charIndex = 1;
+  }
 }
 
 void TextInput::update() {
@@ -20,11 +26,21 @@ void TextInput::update() {
   if (btnLeft()) {
     charIndex--;
     if (charIndex < 0) charIndex = charsetLength - 1;
+    // skip exit char when buffer is empty
+    if (cursor == 0 && charset[charIndex] == exitChar) {
+      charIndex--;
+      if (charIndex < 0) charIndex = charsetLength - 1;
+    }
   }
 
   if (btnRight()) {
     charIndex++;
     if (charIndex >= charsetLength) charIndex = 0;
+    // skip exit char when buffer is empty
+    if (cursor == 0 && charset[charIndex] == exitChar) {
+      charIndex++;
+      if (charIndex >= charsetLength) charIndex = 0;
+    }
   }
 
   if (btnCenter()) {
@@ -39,6 +55,8 @@ void TextInput::update() {
     buffer += picked;
     cursor++;
     charIndex = 0;
+    // if first char in charset is exit char and we're back to cursor 0 edge,
+    // that's fine — cursor just incremented so cursor > 0 now
 
     if (cursor >= maxLen) {
       done = true;
@@ -70,7 +88,7 @@ void TextInput::draw(const std::string& label) {
 
   std::string single(1, currentChar);
   if (single[0] == ' ') single[0] = '_';
-  if (single[0] == '#') single = "OK";
+  if (single[0] == '#') single = "_";
   i16 beforeW = (cursor > 0) ? u8g2.getStrWidth(buffer.c_str()) : 0;
   i16 pickX = fieldX + beforeW;
 
@@ -90,9 +108,12 @@ void TextInput::draw(const std::string& label) {
     while (idx < 0) idx += charsetLength;
     while (idx >= charsetLength) idx -= charsetLength;
 
+    // hide exit char in the strip when buffer is empty
+    if (cursor == 0 && charset[idx] == exitChar) continue;
+
     std::string ch(1, charset[idx]);
     if (ch[0] == ' ') ch[0] = '_';
-    if (ch[0] == '#') ch = "OK";
+    if (ch[0] == '#') ch = "_";
 
     i16 px = 64 + (offset * 12) - 3;
     if (px < 0 || px > 122) continue;
