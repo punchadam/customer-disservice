@@ -11,6 +11,7 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R2, /* reset=*/ U8X8_PIN_NONE);
 
 // game globals
 Character player;
+bool deathCounted = false;
 
 // shared LFSR noise
 u16 noiseSeed = 0xACE1;
@@ -107,6 +108,12 @@ static void drawTitleShimmer() {
 void updateTitle() {
   u8g2.setFont(u8g2_font_oskool_tr);
   u8g2.drawStr(0, 16, "Violet's");
+
+  // death counter top-right
+  u8g2.setFont(u8g2_font_4x6_tr);
+  std::string dc = "Deaths:" + std::to_string(deathCount);
+  i16 dcW = u8g2.getStrWidth(dc.c_str());
+  u8g2.drawStr(128 - dcW, 6, dc.c_str());
 
   // logo text + shimmer
   drawTitleShimmer();
@@ -300,6 +307,10 @@ void updateCutscene() {
 }
 
 void updateResult() {
+  if (!deathCounted) {
+    incrementDeathCount();
+    deathCounted = true;
+  }
   drawTextCenteredHorizontally("R.I.P.", u8g2_font_disrespectfulteenager_tu, 20);
 
   std::string epitaph = player.name + ", age " + std::to_string(player.age);
@@ -311,6 +322,7 @@ void updateResult() {
   drawTextCenteredHorizontally("press any button", u8g2_font_4x6_tr, 63);
 
   if (btnLeft() || btnCenter() || btnRight()) {
+    deathCounted = false;
     cutsceneBegin();
     enterState(State::Cutscene);
   }
@@ -322,6 +334,7 @@ void setup() {
   initButtons();
   mpu.begin();
   loadCustomers();
+  loadDeathCount();
   enterState(State::Title);
 }
 

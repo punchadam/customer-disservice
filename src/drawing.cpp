@@ -3,8 +3,7 @@
 void drawPlayerInfo() {
   u8g2.setFont(u8g2_font_4x6_tr);
   std::string info = player.name + ", " + std::to_string(player.age);
-  i16 tw = u8g2.getStrWidth(info.c_str());
-  u8g2.drawStr(127 - tw, 7, info.c_str());
+  u8g2.drawStr(1, 7, info.c_str());
 }
 
 void drawTextCenteredHorizontally(const std::string& txt, const uint8_t *font, i16 height) {
@@ -35,46 +34,80 @@ void drawMenu(const std::string& label, const std::string& value, i8 index, i8 m
   drawFullWidthMenu(label, value, index, maxIndex);
 }
 
+// helper: check if a bounding box is fully inside the current draw region
+static bool inBox(i16 x0, i16 y0, i16 x1, i16 y1,
+                  i16 clipL, i16 clipT, i16 clipR, i16 clipB) {
+  return x0 >= clipL && x1 <= clipR && y0 >= clipT && y1 <= clipB;
+}
+
 void drawCharacter(i16 cx, i16 cy, bool fullScreen) {
+  // determine the drawable region
+  i16 clipL, clipT, clipR, clipB;
   if (fullScreen) {
-    u8g2.setClipWindow(0, 0, 127, 63);
+    clipL = 0; clipT = 0; clipR = 127; clipB = 63;
   } else {
-    u8g2.setClipWindow(BOX_X, BOX_Y, BOX_X + BOX_W - 1, BOX_Y + BOX_H - 1);
+    clipL = BOX_X; clipT = BOX_Y;
+    clipR = BOX_X + BOX_W - 1; clipB = BOX_Y + BOX_H - 1;
   }
 
-  i16 headY = cy - CHAR_H + 3;
-  u8g2.drawCircle(cx, headY, 3);
+  // Set clip window to prevent overdraw into scroller area,
+  // but we also manually cull primitives to avoid U8g2 clip artifacts.
+  u8g2.setClipWindow(clipL, clipT, clipR, clipB);
 
+  i16 headY = cy - CHAR_H + 3;
+
+  // head (circle radius 3 → bounding box cx-3..cx+3, headY-3..headY+3)
+  if (inBox(cx - 3, headY - 3, cx + 3, headY + 3, clipL, clipT, clipR, clipB))
+    u8g2.drawCircle(cx, headY, 3);
+
+  // torso
   i16 torsoTop = headY + 3;
   i16 torsoBot = torsoTop + 5;
-  u8g2.drawLine(cx, torsoTop, cx, torsoBot);
+  if (inBox(cx, torsoTop, cx, torsoBot, clipL, clipT, clipR, clipB))
+    u8g2.drawLine(cx, torsoTop, cx, torsoBot);
 
-  u8g2.drawLine(cx - 4, torsoTop + 2, cx + 4, torsoTop + 2);
+  // arms
+  if (inBox(cx - 4, torsoTop + 2, cx + 4, torsoTop + 2, clipL, clipT, clipR, clipB))
+    u8g2.drawLine(cx - 4, torsoTop + 2, cx + 4, torsoTop + 2);
 
-  u8g2.drawLine(cx, torsoBot, cx - 3, cy);
-  u8g2.drawLine(cx, torsoBot, cx + 3, cy);
+  // left leg
+  if (inBox(cx - 3, torsoBot, cx, cy, clipL, clipT, clipR, clipB))
+    u8g2.drawLine(cx, torsoBot, cx - 3, cy);
 
+  // right leg
+  if (inBox(cx, torsoBot, cx + 3, cy, clipL, clipT, clipR, clipB))
+    u8g2.drawLine(cx, torsoBot, cx + 3, cy);
+
+  // hats — only draw when the whole hat is inside the region
   switch (player.hat) {
     case Hat::None:
       break;
     case Hat::Frog:
-      u8g2.drawFilledEllipse(cx - 3, headY - 4, 2, 2, U8G2_DRAW_ALL);
-      u8g2.drawFilledEllipse(cx + 3, headY - 4, 2, 2, U8G2_DRAW_ALL);
+      if (inBox(cx - 5, headY - 6, cx + 5, headY - 2, clipL, clipT, clipR, clipB)) {
+        u8g2.drawFilledEllipse(cx - 3, headY - 4, 2, 2, U8G2_DRAW_ALL);
+        u8g2.drawFilledEllipse(cx + 3, headY - 4, 2, 2, U8G2_DRAW_ALL);
+      }
       break;
     case Hat::Top:
-      u8g2.drawBox(cx - 3, headY - 8, 7, 5);
-      u8g2.drawLine(cx - 5, headY - 3, cx + 5, headY - 3);
+      if (inBox(cx - 5, headY - 8, cx + 5, headY - 3, clipL, clipT, clipR, clipB)) {
+        u8g2.drawBox(cx - 3, headY - 8, 7, 5);
+        u8g2.drawLine(cx - 5, headY - 3, cx + 5, headY - 3);
+      }
       break;
     case Hat::Baseball:
-      u8g2.drawFilledEllipse(cx, headY - 2, 3, 3, U8G2_DRAW_UPPER_LEFT | U8G2_DRAW_UPPER_RIGHT);
-      u8g2.drawLine(cx + 3, headY - 2, cx + 6, headY - 2);
+      if (inBox(cx - 3, headY - 5, cx + 6, headY - 2, clipL, clipT, clipR, clipB)) {
+        u8g2.drawFilledEllipse(cx, headY - 2, 3, 3, U8G2_DRAW_UPPER_LEFT | U8G2_DRAW_UPPER_RIGHT);
+        u8g2.drawLine(cx + 3, headY - 2, cx + 6, headY - 2);
+      }
       break;
     case Hat::Cowboy:
-      u8g2.drawLine(cx - 6, headY - 2, cx + 6, headY - 2);
-      u8g2.drawBox(cx - 2, headY - 6, 5, 4);
-      u8g2.setDrawColor(0);
-      u8g2.drawPixel(cx, headY - 6);
-      u8g2.setDrawColor(1);
+      if (inBox(cx - 6, headY - 6, cx + 6, headY - 2, clipL, clipT, clipR, clipB)) {
+        u8g2.drawLine(cx - 6, headY - 2, cx + 6, headY - 2);
+        u8g2.drawBox(cx - 2, headY - 6, 5, 4);
+        u8g2.setDrawColor(0);
+        u8g2.drawPixel(cx, headY - 6);
+        u8g2.setDrawColor(1);
+      }
       break;
     default:
       break;

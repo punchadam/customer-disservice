@@ -4,6 +4,20 @@
 #include "buttons.h"
 #include "accelerometer.h"
 #include <math.h>
+#include "bitmaps.h"
+
+static const unsigned char** getDeathBitmaps(Death d, int& outCount) {
+  switch (d) {
+    case Death::Button: outCount = button_bitmap_count; return button_bitmap_array;
+    case Death::Gun:    outCount = gun_bitmap_count;    return gun_bitmap_array;
+    case Death::Sword:  outCount = sword_bitmap_count;  return sword_bitmap_array;
+    case Death::Kick:   outCount = kick_bitmap_count;   return kick_bitmap_array;
+    case Death::Eat:    outCount = eat_bitmap_count;     return eat_bitmap_array;
+    case Death::Throw:  outCount = throw_bitmap_count;   return throw_bitmap_array;
+    case Death::Bale:   outCount = bale_bitmap_count;    return bale_bitmap_array;
+    default:            outCount = button_bitmap_count; return button_bitmap_array;
+  }
+}
 
 // cutscene state
 static CutscenePhase phase;
@@ -42,9 +56,28 @@ static u32 lastPhysicsTime;
 // did user pick EXIT in death chooser?
 static bool exitPicked;
 
+// ── death anim shared positions ──
+// character on left-of-center, user (hatless) on right-of-center
+static const i16 CHAR_CX = 44;
+static const i16 USER_CX = 84;
+static const i16 ANIM_CY = 50;  // feet y for both figures
+
 static void enterPhase(CutscenePhase p) {
   phase = p;
   phaseStart = millis();
+}
+
+// draw a hatless stick figure (the "user" who inflicts the death)
+// same proportions as drawCharacter: head at cy-CHAR_H+3, feet at cy
+static void drawUser(i16 cx, i16 cy) {
+  i16 headY = cy - CHAR_H + 3;
+  u8g2.drawCircle(cx, headY, 3);          // head
+  i16 torsoTop = headY + 3;
+  i16 torsoBot = torsoTop + 5;
+  u8g2.drawLine(cx, torsoTop, cx, torsoBot);              // spine
+  u8g2.drawLine(cx - 4, torsoTop + 2, cx + 4, torsoTop + 2); // arms
+  u8g2.drawLine(cx, torsoBot, cx - 3, cy);                // left leg
+  u8g2.drawLine(cx, torsoBot, cx + 3, cy);                // right leg
 }
 
 void cutsceneBegin() {
@@ -112,31 +145,53 @@ static void drawDialogueBox() {
 }
 
 // death animations
+// All share: character (with hat) at (CHAR_CX, ANIM_CY)
+//            user (hatless)       at (USER_CX, ANIM_CY)
+// Helpers for common y-coords:
+//   headY     = ANIM_CY - CHAR_H + 3   (= 39)
+//   torsoTop  = headY + 3               (= 42)
+//   armY      = torsoTop + 2            (= 44)
+//   torsoBot  = torsoTop + 5            (= 47)
 
+// BUTTON: user presses a button between them → character explodes
 static void animateDeathButton() {
   u32 elapsed = millis() - phaseStart;
 
+  const i16 armY = ANIM_CY - CHAR_H + 3 + 3 + 2;  // user arm-line y
+  const i16 btnX = (CHAR_CX + USER_CX) / 2 - 3;    // button centered between
+  const i16 btnY = ANIM_CY - 3;                      // near ground level
+
   if (deathAnimPhase == 0) {
-    drawCharacter((i16)player.x, (i16)player.y, true);
+    // both standing, user reaches toward button
+    drawCharacter(CHAR_CX, ANIM_CY, true);
+    drawUser(USER_CX, ANIM_CY);
 
-    i16 btnX = (i16)player.x - 5;
-    i16 btnY = (i16)player.y + 4;
-    u8g2.drawFrame(btnX, btnY, 11, 7);
-    u8g2.setFont(u8g2_font_4x6_tr);
-    u8g2.drawStr(btnX + 2, btnY + 6, "OK");
+    u8g2.drawFrame(btnX, btnY, 7, 5);  // button outline
 
-    if (elapsed > 800) {
+    float t = min(elapsed / 600.0f, 1.0f);
+    // user's left arm extends toward button
+    i16 handX = USER_CX - 4 - (i16)(t * (USER_CX - 4 - btnX - 4));
+    i16 handY = armY + (i16)(t * (btnY + 2 - armY));
+    u8g2.drawLine(USER_CX - 4, armY, handX, handY);
+
+    if (t >= 1.0f) {
       deathAnimPhase = 1;
       phaseStart = millis();
     }
   } else {
-    noiseSeed = (u16)(millis() * 3);
-    float t = elapsed / 800.0f;
-    if (t > 1.0f) { enterPhase(CutscenePhase::Done); return; }
+    // button pressed → character explodes
+    drawUser(USER_CX, ANIM_CY);
+    u8g2.drawBox(btnX, btnY, 7, 5);  // filled = pressed
 
-    i16 cx = (i16)player.x;
-    i16 cy = (i16)player.y - CHAR_H / 2;
-    i16 radius = (i16)(t * 20);
+    // arm stays on button
+    u8g2.drawLine(USER_CX - 4, armY, btnX + 4, btnY + 2);
+
+    // explosion particles from character center
+    float t = min((millis() - phaseStart) / 800.0f, 1.0f);
+    noiseSeed = (u16)(millis() * 3);
+    i16 cx = CHAR_CX;
+    i16 cy = ANIM_CY - CHAR_H / 2;
+    i16 radius = (i16)(t * 22);
     for (u8 i = 0; i < 30; i++) {
       float angle = (noiseRand() % 360) * 3.14159f / 180.0f;
       float r = (noiseRand() % (radius + 1));
@@ -144,66 +199,149 @@ static void animateDeathButton() {
       i16 py = cy + (i16)(sin(angle) * r);
       u8g2.drawPixel(px, py);
     }
+
+    if (t >= 1.0f) { enterPhase(CutscenePhase::Done); }
   }
 }
 
+// GUN: user raises arm with a small gun, fires one bullet pixel at character
 static void animateDeathGun() {
   u32 elapsed = millis() - phaseStart;
 
-  if (deathAnimPhase == 0) {
-    drawCharacter((i16)player.x, (i16)player.y, true);
-
-    float gunProgress = min(elapsed / 400.0f, 1.0f);
-    i16 gunX = 128 - (i16)(gunProgress * 60);
-    i16 gunY = (i16)player.y - CHAR_H / 2;
-    u8g2.drawBox(gunX, gunY - 1, 8, 3);
-    u8g2.drawLine(gunX, gunY, gunX - 4, gunY);
-
-    if (elapsed > 600) {
-      u8g2.drawLine(gunX - 4, gunY, (i16)player.x + 4, gunY);
-      deathAnimPhase = 1;
-      phaseStart = millis();
-    }
-  } else {
-    float t = min((millis() - phaseStart) / 600.0f, 1.0f);
-    i16 fallY = (i16)(player.y + t * 10);
-    drawCharacter((i16)player.x + (i16)(t * 6), fallY, true);
-
-    if (t >= 1.0f && (millis() - phaseStart) > 800) {
-      enterPhase(CutscenePhase::Done);
-    }
-  }
-}
-
-static void animateDeathSword() {
-  u32 elapsed = millis() - phaseStart;
+  const i16 armY = ANIM_CY - CHAR_H + 3 + 3 + 2;
 
   if (deathAnimPhase == 0) {
-    drawCharacter((i16)player.x, (i16)player.y, true);
+    // user raises arm with gun
+    drawCharacter(CHAR_CX, ANIM_CY, true);
+    drawUser(USER_CX, ANIM_CY);
 
-    float t = min(elapsed / 500.0f, 1.0f);
-    float angle = -0.8f + t * 1.6f;
-    i16 hiltX = (i16)player.x + 12;
-    i16 hiltY = (i16)player.y - CHAR_H - 5;
-    i16 tipX = hiltX + (i16)(sin(angle) * 18);
-    i16 tipY = hiltY + (i16)(cos(angle) * 18);
-    u8g2.drawLine(hiltX, hiltY, tipX, tipY);
-    u8g2.drawLine(hiltX - 2, hiltY + 1, hiltX + 2, hiltY + 1);
+    float t = min(elapsed / 400.0f, 1.0f);
+    // arm goes from default left end to pointing horizontally left
+    i16 handX = USER_CX - 4 - (i16)(t * 4);
+    i16 handY = armY + (i16)((1.0f - t) * 5);  // starts drooping, ends level
+    u8g2.drawLine(USER_CX - 4, armY, handX, handY);
+
+    // gun appears once arm is partway up
+    if (t > 0.5f) {
+      u8g2.drawLine(handX, handY, handX - 5, handY);       // barrel
+      u8g2.drawLine(handX - 1, handY, handX - 1, handY + 2); // grip
+    }
 
     if (t >= 1.0f) {
       deathAnimPhase = 1;
       phaseStart = millis();
     }
+  } else if (deathAnimPhase == 1) {
+    // bullet travels from gun to character
+    drawUser(USER_CX, ANIM_CY);
+
+    // arm + gun held steady
+    i16 gunTipX = USER_CX - 13;
+    u8g2.drawLine(USER_CX - 4, armY, USER_CX - 8, armY);
+    u8g2.drawLine(USER_CX - 8, armY, gunTipX, armY);
+    u8g2.drawLine(USER_CX - 9, armY, USER_CX - 9, armY + 2);
+
+    float t = min((millis() - phaseStart) / 250.0f, 1.0f);
+    i16 bulletX = gunTipX - (i16)(t * (gunTipX - CHAR_CX));
+    u8g2.drawPixel(bulletX, armY);
+
+    // character still visible until bullet hits
+    if (t < 0.95f) {
+      drawCharacter(CHAR_CX, ANIM_CY, true);
+    }
+
+    if (t >= 1.0f) {
+      deathAnimPhase = 2;
+      phaseStart = millis();
+    }
   } else {
+    // character falls
+    drawUser(USER_CX, ANIM_CY);
+    // keep gun drawn
+    u8g2.drawLine(USER_CX - 4, armY, USER_CX - 8, armY);
+    u8g2.drawLine(USER_CX - 8, armY, USER_CX - 13, armY);
+    u8g2.drawLine(USER_CX - 9, armY, USER_CX - 9, armY + 2);
+
+    float t = min((millis() - phaseStart) / 500.0f, 1.0f);
+    i16 fallX = CHAR_CX - (i16)(t * 6);
+    i16 fallY = ANIM_CY + (i16)(t * 10);
+    drawCharacter(fallX, fallY, true);
+
+    if (t >= 1.0f && (millis() - phaseStart) > 700) {
+      enterPhase(CutscenePhase::Done);
+    }
+  }
+}
+
+// SWORD: user holds sword above head, sweeps down to slice the character in half
+static void animateDeathSword() {
+  u32 elapsed = millis() - phaseStart;
+
+  const i16 headY = ANIM_CY - CHAR_H + 3;
+  const i16 torsoTop = headY + 3;
+  const i16 armY = torsoTop + 2;
+
+  if (deathAnimPhase == 0) {
+    // user holds sword above head, both standing
+    drawCharacter(CHAR_CX, ANIM_CY, true);
+    drawUser(USER_CX, ANIM_CY);
+
+    // arm raised up-left, hand above head
+    i16 handX = USER_CX - 2;
+    i16 handY = headY - 6;
+    u8g2.drawLine(USER_CX - 4, armY, handX, handY);
+
+    // sword blade pointing up from hand
+    u8g2.drawLine(handX, handY, handX, handY - 10);
+    // crossguard
+    u8g2.drawLine(handX - 2, handY, handX + 2, handY);
+
+    if (elapsed > 500) {
+      deathAnimPhase = 1;
+      phaseStart = millis();
+    }
+  } else if (deathAnimPhase == 1) {
+    // sword sweeps down-left toward character's midsection
+    drawCharacter(CHAR_CX, ANIM_CY, true);
+    drawUser(USER_CX, ANIM_CY);
+
+    float t = min((millis() - phaseStart) / 300.0f, 1.0f);
+
+    // sword tip: from above user's head to character's center
+    i16 startTipX = USER_CX - 2;
+    i16 startTipY = headY - 16;
+    i16 endTipX = CHAR_CX;
+    i16 endTipY = ANIM_CY - CHAR_H / 2;
+
+    i16 tipX = startTipX + (i16)((endTipX - startTipX) * t);
+    i16 tipY = startTipY + (i16)((endTipY - startTipY) * t);
+
+    // hand follows arc
+    i16 handX = USER_CX - 4 - (i16)(t * 6);
+    i16 handY = headY - 6 + (i16)(t * 14);
+    u8g2.drawLine(USER_CX - 4, armY, handX, handY);
+    u8g2.drawLine(handX, handY, tipX, tipY);
+    u8g2.drawLine(handX - 2, handY, handX + 2, handY);
+
+    if (t >= 1.0f) {
+      deathAnimPhase = 2;
+      phaseStart = millis();
+    }
+  } else {
+    // character splits in two halves sliding apart
+    drawUser(USER_CX, ANIM_CY);
+
     float t = min((millis() - phaseStart) / 700.0f, 1.0f);
     i16 offset = (i16)(t * 8);
 
-    u8g2.setClipWindow(0, 0, (i16)player.x, 63);
-    drawCharacter((i16)player.x - offset, (i16)player.y, true);
+    // left half slides left
+    u8g2.setClipWindow(0, 0, CHAR_CX, 63);
+    drawCharacter(CHAR_CX - offset, ANIM_CY, true);
     u8g2.setMaxClipWindow();
 
-    u8g2.setClipWindow((i16)player.x, 0, 127, 63);
-    drawCharacter((i16)player.x + offset, (i16)player.y, true);
+    // right half slides right (but not past user)
+    u8g2.setClipWindow(CHAR_CX, 0, USER_CX - 8, 63);
+    drawCharacter(CHAR_CX + offset, ANIM_CY, true);
     u8g2.setMaxClipWindow();
 
     if (t >= 1.0f && (millis() - phaseStart) > 900) {
@@ -212,33 +350,48 @@ static void animateDeathSword() {
   }
 }
 
+// KICK: user kicks the character off screen to the left
 static void animateDeathKick() {
   u32 elapsed = millis() - phaseStart;
 
-  if (deathAnimPhase == 0) {
-    drawCharacter((i16)player.x, (i16)player.y, true);
+  const i16 torsoBot = ANIM_CY - CHAR_H + 3 + 3 + 5;
 
-    float t = min(elapsed / 400.0f, 1.0f);
-    i16 bootX = 128 - (i16)(t * (128 - player.x + 10));
-    i16 bootY = (i16)player.y - CHAR_H / 2 + 2;
-    u8g2.drawBox(bootX, bootY - 2, 8, 5);
-    u8g2.drawBox(bootX - 3, bootY + 2, 11, 2);
-    u8g2.drawLine(bootX + 8, bootY, min((i16)127, (i16)(bootX + 20)), bootY - 5);
+  if (deathAnimPhase == 0) {
+    // user winds up — extends left leg toward character
+    drawCharacter(CHAR_CX, ANIM_CY, true);
+    drawUser(USER_CX, ANIM_CY);
+
+    float t = min(elapsed / 350.0f, 1.0f);
+
+    // kicking leg extends from torsoBot toward character
+    i16 footX = USER_CX - 3 - (i16)(t * (USER_CX - 3 - CHAR_CX));
+    i16 footY = torsoBot + (i16)((1.0f - t) * (ANIM_CY - torsoBot));
+    u8g2.drawLine(USER_CX, torsoBot, footX, footY);
 
     if (t >= 1.0f) {
       deathAnimPhase = 1;
       phaseStart = millis();
     }
   } else {
+    // character flies off left
+    drawUser(USER_CX, ANIM_CY);
+
+    // keep kick leg extended horizontally
+    u8g2.drawLine(USER_CX, torsoBot, CHAR_CX, torsoBot);
+
     float t = min((millis() - phaseStart) / 500.0f, 1.0f);
-    i16 flyX = (i16)(player.x - t * (player.x + 20));
-    i16 flyY = (i16)(player.y - sin(t * 3.14159f) * 15);
+    i16 flyX = CHAR_CX - (i16)(t * (CHAR_CX + 20));
+    i16 flyY = (i16)(ANIM_CY - sin(t * 3.14159f) * 12);
+
     if (flyX > -20) {
       drawCharacter(flyX, flyY, true);
     }
+
+    // impact sparks
+    noiseSeed = (u16)(millis() * 5);
     for (u8 i = 0; i < 3; i++) {
-      i16 sx = flyX + (i16)(noiseRand() % 12) - 6;
-      i16 sy = flyY - CHAR_H + (i16)(noiseRand() % 8) - 4;
+      i16 sx = flyX + (i16)(noiseRand() % 10) - 5;
+      i16 sy = flyY - CHAR_H / 2 + (i16)(noiseRand() % 8) - 4;
       u8g2.drawPixel(sx, sy);
     }
 
@@ -248,25 +401,37 @@ static void animateDeathKick() {
   }
 }
 
+// EAT: user morphs into pacman facing left, slides into the character
 static void animateDeathEat() {
   u32 elapsed = millis() - phaseStart;
 
+  const i16 pacR = 8;
+  const i16 pacCY = ANIM_CY - CHAR_H / 2;  // vertical center of figures
+
   if (deathAnimPhase == 0) {
-    float t = min(elapsed / 600.0f, 1.0f);
-    i16 mouthOpen = (i16)(t * 30);
+    // user morphs: first half show user, second half morph to pacman
+    float t = min(elapsed / 500.0f, 1.0f);
 
-    drawCharacter((i16)player.x, (i16)player.y, true);
+    drawCharacter(CHAR_CX, ANIM_CY, true);
 
-    i16 jawY = 63 - mouthOpen;
-    u8g2.drawLine(0, jawY, 127, jawY);
-    for (i16 tx = 4; tx < 128; tx += 12) {
-      u8g2.drawTriangle(tx, jawY, tx + 4, jawY, tx + 2, jawY - 3);
-    }
-    i16 topY = jawY - 40;
-    if (topY < 0) topY = 0;
-    u8g2.drawLine(0, topY, 127, topY);
-    for (i16 tx = 4; tx < 128; tx += 12) {
-      u8g2.drawTriangle(tx, topY, tx + 4, topY, tx + 2, topY + 3);
+    if (t < 0.5f) {
+      drawUser(USER_CX, ANIM_CY);
+    } else {
+      // growing pacman at user position
+      float st = (t - 0.5f) / 0.5f;  // 0→1 over second half
+      i16 r = 3 + (i16)(st * (pacR - 3));
+
+      u8g2.drawDisc(USER_CX, pacCY, r);
+      // cut mouth wedge (facing left)
+      u8g2.setDrawColor(0);
+      i16 mouthW = r + 3;
+      i16 mouthH = (i16)(st * 5) + 2;
+      u8g2.drawTriangle(USER_CX, pacCY,
+                         USER_CX - mouthW, pacCY - mouthH,
+                         USER_CX - mouthW, pacCY + mouthH);
+      u8g2.setDrawColor(1);
+      // eye
+      u8g2.drawPixel(USER_CX + 1, pacCY - r / 2 - 1);
     }
 
     if (t >= 1.0f) {
@@ -274,51 +439,84 @@ static void animateDeathEat() {
       phaseStart = millis();
     }
   } else {
-    float t = min((millis() - phaseStart) / 400.0f, 1.0f);
-    i16 midY = 32;
-    i16 gap = (i16)((1.0f - t) * 20);
+    // pacman slides left, chomping, eats character
+    float t = min((millis() - phaseStart) / 800.0f, 1.0f);
 
-    u8g2.drawLine(0, midY - gap, 127, midY - gap);
-    u8g2.drawLine(0, midY + gap, 127, midY + gap);
-    for (i16 tx = 4; tx < 128; tx += 12) {
-      u8g2.drawTriangle(tx, midY - gap, tx + 4, midY - gap, tx + 2, midY - gap + 3);
-      u8g2.drawTriangle(tx, midY + gap, tx + 4, midY + gap, tx + 2, midY + gap - 3);
+    i16 pacX = USER_CX - (i16)(t * (USER_CX - CHAR_CX + pacR + 10));
+
+    // chomp animation
+    bool mouthOpen = ((millis() / 150) % 2 == 0);
+    i16 mouthH = mouthOpen ? 5 : 1;
+
+    u8g2.drawDisc(pacX, pacCY, pacR);
+    u8g2.setDrawColor(0);
+    u8g2.drawTriangle(pacX, pacCY,
+                       pacX - pacR - 3, pacCY - mouthH,
+                       pacX - pacR - 3, pacCY + mouthH);
+    u8g2.setDrawColor(1);
+    u8g2.drawPixel(pacX + 1, pacCY - pacR / 2 - 1);
+
+    // character visible only until pacman reaches it
+    if (pacX - pacR > CHAR_CX + 3) {
+      drawCharacter(CHAR_CX, ANIM_CY, true);
     }
 
-    if (gap <= 0) {
-      u8g2.drawLine(0, midY, 127, midY);
-    }
-
-    if (t >= 1.0f && (millis() - phaseStart) > 600) {
+    if (t >= 1.0f && (millis() - phaseStart) > 1000) {
       enterPhase(CutscenePhase::Done);
     }
   }
 }
 
+// THROW: user grabs character with both arms, lifts, and hurls left
 static void animateDeathThrow() {
   u32 elapsed = millis() - phaseStart;
 
-  if (deathAnimPhase == 0) {
-    float t = min(elapsed / 500.0f, 1.0f);
-    i16 liftY = (i16)(player.y - t * 20);
-    drawCharacter((i16)player.x, liftY, true);
+  const i16 armY = ANIM_CY - CHAR_H + 3 + 3 + 2;
 
-    i16 handY = liftY - CHAR_H - 3;
-    u8g2.drawLine((i16)player.x - 3, handY, (i16)player.x + 3, handY);
-    u8g2.drawLine((i16)player.x - 3, handY, (i16)player.x - 3, handY + 3);
-    u8g2.drawLine((i16)player.x + 3, handY, (i16)player.x + 3, handY + 3);
+  if (deathAnimPhase == 0) {
+    // user reaches both arms toward character
+    drawCharacter(CHAR_CX, ANIM_CY, true);
+    drawUser(USER_CX, ANIM_CY);
+
+    float t = min(elapsed / 400.0f, 1.0f);
+    i16 handX = USER_CX - 4 - (i16)(t * (USER_CX - 4 - CHAR_CX));
+    // two arms, slightly spread vertically
+    u8g2.drawLine(USER_CX - 4, armY, handX, armY - 2);
+    u8g2.drawLine(USER_CX - 4, armY, handX, armY + 2);
 
     if (t >= 1.0f) {
       deathAnimPhase = 1;
       phaseStart = millis();
     }
-  } else {
-    float t = min((millis() - phaseStart) / 600.0f, 1.0f);
-    float startY = player.y - 20;
-    i16 throwX = (i16)(player.x + t * 100);
-    i16 throwY = (i16)(startY + sin(t * 3.14159f) * -20 + t * 30);
+  } else if (deathAnimPhase == 1) {
+    // user lifts character up
+    drawUser(USER_CX, ANIM_CY);
 
-    if (throwX < 140) {
+    float t = min((millis() - phaseStart) / 300.0f, 1.0f);
+    i16 liftY = ANIM_CY - (i16)(t * 12);
+
+    // arms hold onto character
+    i16 charMidY = liftY - CHAR_H / 2;
+    u8g2.drawLine(USER_CX - 4, armY, CHAR_CX, charMidY - 2);
+    u8g2.drawLine(USER_CX - 4, armY, CHAR_CX, charMidY + 2);
+
+    drawCharacter(CHAR_CX, liftY, true);
+
+    if (t >= 1.0f) {
+      deathAnimPhase = 2;
+      phaseStart = millis();
+    }
+  } else {
+    // character thrown left off screen
+    drawUser(USER_CX, ANIM_CY);
+
+    float t = min((millis() - phaseStart) / 600.0f, 1.0f);
+    float startY = ANIM_CY - 12;
+    i16 throwX = CHAR_CX - (i16)(t * (CHAR_CX + 30));
+    i16 throwY = (i16)(startY + sin(t * 3.14159f) * -15 + t * 20);
+
+    if (throwX > -20) {
+      // tumble effect
       if ((millis() / 100) % 2 == 0) {
         drawCharacter(throwX, throwY, true);
       } else {
@@ -327,6 +525,76 @@ static void animateDeathThrow() {
     }
 
     if (t >= 1.0f && (millis() - phaseStart) > 800) {
+      enterPhase(CutscenePhase::Done);
+    }
+  }
+}
+
+// BALE: two horizontal lines span across the character and squish together,
+// crushing everything between them to black, leaving just one flat line
+static void animateDeathBale() {
+  u32 elapsed = millis() - phaseStart;
+
+  // lines only span across the character area, not reaching the user
+  const i16 lineLeft = CHAR_CX - 15;
+  const i16 lineRight = CHAR_CX + 15;
+  const i16 charMidY = ANIM_CY - CHAR_H / 2;
+
+  if (deathAnimPhase == 0) {
+    // both standing, two horizontal lines appear above and below character
+    drawCharacter(CHAR_CX, ANIM_CY, true);
+    drawUser(USER_CX, ANIM_CY);
+
+    float t = min(elapsed / 400.0f, 1.0f);
+
+    // top line slides down from above, bottom line slides up from below
+    i16 topY = charMidY - 16 + (i16)(t * 4);
+    i16 botY = charMidY + 16 - (i16)(t * 4);
+
+    u8g2.drawLine(lineLeft, topY, lineRight, topY);
+    u8g2.drawLine(lineLeft, botY, lineRight, botY);
+
+    if (t >= 1.0f) {
+      deathAnimPhase = 1;
+      phaseStart = millis();
+    }
+  } else if (deathAnimPhase == 1) {
+    // lines close in, black-filling everything between them and the center
+    drawUser(USER_CX, ANIM_CY);
+
+    float t = min((millis() - phaseStart) / 700.0f, 1.0f);
+
+    i16 topStart = charMidY - 12;
+    i16 botStart = charMidY + 12;
+    i16 topY = topStart + (i16)(t * (charMidY - topStart));
+    i16 botY = botStart - (i16)(t * (botStart - charMidY));
+
+    // black out region between lines (crushing the character)
+    u8g2.setDrawColor(0);
+    i16 crushH = botY - topY;
+    if (crushH < 1) crushH = 1;
+    u8g2.drawBox(lineLeft, topY, lineRight - lineLeft + 1, crushH);
+    u8g2.setDrawColor(1);
+
+    // draw character clipped to the shrinking gap
+    u8g2.setClipWindow(lineLeft, topY, lineRight, botY);
+    drawCharacter(CHAR_CX, ANIM_CY, true);
+    u8g2.setMaxClipWindow();
+
+    // draw the two lines
+    u8g2.drawLine(lineLeft, topY, lineRight, topY);
+    u8g2.drawLine(lineLeft, botY, lineRight, botY);
+
+    if (t >= 1.0f) {
+      deathAnimPhase = 2;
+      phaseStart = millis();
+    }
+  } else {
+    // single flat line remains where the character was
+    drawUser(USER_CX, ANIM_CY);
+    u8g2.drawLine(lineLeft, charMidY, lineRight, charMidY);
+
+    if ((millis() - phaseStart) > 600) {
       enterPhase(CutscenePhase::Done);
     }
   }
@@ -472,12 +740,20 @@ void cutsceneUpdate() {
     }
 
     case CutscenePhase::WhiteFlash: {
-      u8g2.drawBox(0, 0, 128, 64);
+      const u32 FRAME_DURATION = 125;
+      u8 frameIndex = elapsed / FRAME_DURATION;
 
-      if (elapsed >= 1000) {
+      int bitmapCount;
+      const unsigned char** bitmaps = getDeathBitmaps(chosenDeath, bitmapCount);
+
+      if (frameIndex >= bitmapCount) frameIndex = bitmapCount - 1;
+
+      u8g2.drawXBMP(0, 0, 128, 64, bitmaps[frameIndex]);
+
+      if (elapsed >= FRAME_DURATION * (u32)bitmapCount) {
         deathAnimPhase = 0;
-        player.x = 64;
-        player.y = 50;
+        player.x = CHAR_CX;
+        player.y = ANIM_CY;
         enterPhase(CutscenePhase::DeathAnim);
       }
       break;
@@ -489,8 +765,9 @@ void cutsceneUpdate() {
         case Death::Gun:    animateDeathGun();    break;
         case Death::Sword:  animateDeathSword();  break;
         case Death::Kick:   animateDeathKick();   break;
-        case Death::Eat:    animateDeathEat();    break;
-        case Death::Throw:  animateDeathThrow();  break;
+        case Death::Eat:    animateDeathEat();     break;
+        case Death::Throw:  animateDeathThrow();   break;
+        case Death::Bale:   animateDeathBale();    break;
         default: enterPhase(CutscenePhase::Done); break;
       }
       break;

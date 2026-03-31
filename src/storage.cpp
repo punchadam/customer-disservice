@@ -66,3 +66,18 @@ void saveCustomer(const Character& c) {
   }
   prefs.end();
 }
+
+u32 deathCount = 0;
+
+void loadDeathCount() {
+  prefs.begin("stats", true);  // read-only
+  deathCount = prefs.getULong("deaths", 0);
+  prefs.end();
+}
+
+void incrementDeathCount() {
+  deathCount++;
+  prefs.begin("stats", false);  // read-write
+  prefs.putULong("deaths", deathCount);
+  prefs.end();
+}

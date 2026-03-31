@@ -20,9 +20,9 @@ extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2;
 
 // screen layout box area is narrower to leave room for death scroller
 const i16 BOX_X = 0;
-const i16 BOX_Y = 10;   // 2px closer to info text above
+const i16 BOX_Y = 8;    // directly below player info text
 const i16 BOX_W = 96;   // narrowed from 128 to leave 32px for scroller
-const i16 BOX_H = 54;   // taller since BOX_Y moved up
+const i16 BOX_H = 56;   // fills to the bottom of the 64px screen
 
 // full-width box used during character creation menus
 const i16 FULL_BOX_W = 128;
@@ -49,6 +49,7 @@ enum class Death : u8 {
   Kick,        // roundhouse kick
   Eat,
   Throw,
+  Bale,
   COUNT
 };
 
@@ -57,7 +58,7 @@ const std::string hatNames[] = {
 };
 
 const std::string deathNames[] = {
-  "BUTTON", "GUN", "SWORD", "KICK", "EAT", "THROW"
+  "BUTTON", "GUN", "SWORD", "KICK", "EAT", "THROW", "BALE"
 };
 
 // player character
